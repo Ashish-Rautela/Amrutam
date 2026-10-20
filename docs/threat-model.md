@@ -17,26 +17,28 @@
                                                         |
                                             [ Authentication Boundary ]
                                                         v
-                                            [ JWT + TOTP MFA Validator ]
+                                            [ JWT + Isolated TOTP MFA ]
                                                         |
                                              [ Authorization (ABAC) ]
                                                         v
                                        [ Internal Domain Services & DB ]
 ```
 
-## 2. Threat Analysis (STRIDE)
+## 2. Threat Analysis (STRIDE) & Hardened Mitigations
 
 | Threat Category | Potential Attack Vector | Applied Mitigation |
 |---|---|---|
-| **Spoofing** | Forged JWT or stolen refresh tokens | Dual-token model: 15-minute access token; refresh tokens stored with SHA-256 hash in DB, with automatic reuse detection (invalidates entire token family if leaked). TOTP MFA for doctor/admin roles. |
-| **Tampering** | Modifying prescription records or forging payment webhooks | Prescriptions are immutable; amendments require new version records. Payment webhooks validate HMAC-SHA256 signatures against raw request payloads before ingestion. |
-| **Repudiation** | Doctor denies issuing a prescription; patient denies cancelling | Cryptographic digital signature generated over prescription contents; immutable append-only `audit_logs` tracking user ID, IP address, user-agent, timestamp, and changes. |
-| **Information Disclosure** | IDOR / BOLA exposing another patient's medical history or doctor's schedule | Resource ownership middleware (ABAC) guarantees users can only access records where `patient_id == currentUser.id` or `doctor_id == currentDoctor.id`. |
-| **Denial of Service** | High-frequency booking endpoint flooding or doctor search scraping | Sliding window rate limiting on all endpoints via Redis / in-memory token bucket; DB connection pooling; composite indexing on search filters. |
-| **Elevation of Privilege** | Normal patient altering their role to DOCTOR or ADMIN | Role strictly checked from validated JWT claims; role modification restricted exclusively to verified administrators with active MFA. |
+| **Spoofing** | Forged JWT, stolen refresh tokens, or compromised MFA | Dual-token model: 15-minute access token; refresh tokens stored with SHA-256 hash in DB with family rotation. MFA secrets stored in isolated `UserMfaCredential` encrypted with AES-256-GCM; backup codes hashed with Bcrypt/Argon2id. |
+| **Tampering** | Modifying prescription records, forging payment webhooks, or tampering with consent | Prescriptions are append-only with cryptographic doctor signatures. Payment webhooks enter `RECEIVED` state and require constant-time HMAC-SHA256 verification before being marked `PROCESSED`. Consents are stored in immutable `ConsultationConsent` records with IP and timestamps. |
+| **Repudiation** | Doctor denies issuing a prescription; patient denies granting consent | Cryptographic digital signature generated over prescription contents; immutable append-only `audit_logs` tracking user ID, IP address, user-agent, timestamp, and changes. Explicit `ConsultationConsent` record stored per booking. |
+| **Information Disclosure** | IDOR / BOLA exposing medical history; leaking MFA secrets in user queries | Resource ownership middleware (ABAC) ensures patients only see their own records. `UserMfaCredential` is in a separate table, preventing accidental exposure via standard user profile queries. Sensitive health fields encrypted at rest. |
+| **Denial of Service & Race Conditions** | High-frequency booking flooding or double-booking the same slot | PostgreSQL `btree_gist` exclusion constraints prevent overlapping intervals. Atomic pessimistic row-level locking (`SELECT ... FOR UPDATE`) prevents concurrent bookings. Scoped idempotency with `PENDING_CLAIM` rejects duplicate concurrent in-flight requests with 409 Conflict. |
+| **Elevation of Privilege** | Normal patient altering role or bypassing MFA | Role strictly enforced from JWT claims signed with an audited 256-bit secret. Startup validation halts the application if default or insecure secrets are present. |
 
 ## 3. Data Protection & Cryptography
 1. **Data in Transit:** Enforced TLS 1.3 with HSTS headers.
-2. **Data at Rest:** Sensitive medical fields (clinical notes, diagnosis, MFA secrets) encrypted using AES-256-GCM with environment-injected secret keys.
-3. **Password Security:** Salted hashes using Argon2id / Bcrypt with work factor 12.
-4. **Log Sanitization:** Automated Pino logger redaction filters out `password`, `token`, `mfaSecret`, `cardNumber`, `pan`, and `aadhaar` from all console/file logs.
+2. **Data at Rest:** 
+   - TOTP secrets encrypted with AES-256-GCM (requiring IV and authentication tag).
+   - Clinical notes encrypted using AES-256-GCM with environment-injected 64-hex-character secret.
+3. **Password & Backup Code Security:** Salted hashes using Argon2id / Bcrypt with work factor 12.
+4. **Log Sanitization:** Pino logger automatically redacts passwords, tokens, MFA secrets, cards, and clinical notes from stdout/files.

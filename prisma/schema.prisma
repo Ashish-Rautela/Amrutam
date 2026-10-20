@@ -68,41 +68,77 @@ enum OutboxStatus {
   FAILED
 }
 
+enum WebhookEventStatus {
+  RECEIVED
+  VERIFIED
+  PROCESSED
+  FAILED
+  REJECTED
+}
+
+enum IdempotencyStatus {
+  PENDING_CLAIM
+  COMPLETED
+  FAILED
+}
+
+enum ConsentType {
+  TELEMEDICINE_CONSULTATION
+  DATA_PROCESSING
+  PRESCRIPTION_DELIVERY
+}
+
 model User {
-  id              String         @id @default(uuid())
-  email           String         @unique
-  phone           String         @unique
-  passwordHash    String         @map("password_hash")
-  role            Role           @default(PATIENT)
-  status          UserStatus     @default(ACTIVE)
-  mfaEnabled      Boolean        @default(false) @map("mfa_enabled")
-  mfaSecret       String?        @map("mfa_secret")
-  mfaBackupCodes  String[]       @default([]) @map("mfa_backup_codes")
-  createdAt       DateTime       @default(now()) @map("created_at")
-  updatedAt       DateTime       @updatedAt @map("updated_at")
+  id              String             @id @default(uuid())
+  email           String             @unique
+  phone           String             @unique
+  passwordHash    String             @map("password_hash")
+  role            Role               @default(PATIENT)
+  status          UserStatus         @default(ACTIVE)
+  mfaEnabled      Boolean            @default(false) @map("mfa_enabled")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
 
   patientProfile  PatientProfile?
   doctorProfile   DoctorProfile?
+  mfaCredential   UserMfaCredential?
   refreshSessions RefreshSession[]
-  auditLogs       AuditLog[]     @relation("UserAuditLogs")
+  auditLogs       AuditLog[]         @relation("UserAuditLogs")
 
   @@map("users")
 }
 
-model PatientProfile {
-  id            String         @id @default(uuid())
-  userId        String         @unique @map("user_id")
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName      String         @map("full_name")
-  dateOfBirth   DateTime?      @map("date_of_birth")
-  gender        String?
-  bloodGroup    String?        @map("blood_group")
-  emergencyContact String?     @map("emergency_contact")
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
+model UserMfaCredential {
+  id                  String    @id @default(uuid())
+  userId              String    @unique @map("user_id")
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  encryptedTotpSecret String    @map("encrypted_totp_secret") @db.Text
+  iv                  String    @map("iv")
+  authTag             String    @map("auth_tag")
+  hashedBackupCodes   String[]  @default([]) @map("hashed_backup_codes")
+  verified            Boolean   @default(false)
+  lastUsedAt          DateTime? @map("last_used_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  consultations Consultation[]
-  prescriptions Prescription[]
+  @@map("user_mfa_credentials")
+}
+
+model PatientProfile {
+  id               String                @id @default(uuid())
+  userId           String                @unique @map("user_id")
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName         String                @map("full_name")
+  dateOfBirth      DateTime?             @map("date_of_birth")
+  gender           String?
+  bloodGroup       String?               @map("blood_group")
+  emergencyContact String?               @map("emergency_contact")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  consultations    Consultation[]
+  prescriptions    Prescription[]
+  consents         ConsultationConsent[]
 
   @@map("patient_profiles")
 }
@@ -133,47 +169,66 @@ model DoctorProfile {
 }
 
 model AvailabilitySlot {
-  id          String       @id @default(uuid())
-  doctorId    String       @map("doctor_id")
+  id          String        @id @default(uuid())
+  doctorId    String        @map("doctor_id")
   doctor      DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  startTime   DateTime     @map("start_time")
-  endTime     DateTime     @map("end_time")
-  status      SlotStatus   @default(AVAILABLE)
-  version     Int          @default(0)
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  startTime   DateTime      @map("start_time")
+  endTime     DateTime      @map("end_time")
+  status      SlotStatus    @default(AVAILABLE)
+  version     Int           @default(0)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
 
   consultation Consultation?
 
-  @@unique([doctorId, startTime], name: "doctor_slot_unique")
-  @@index([doctorId, startTime, status])
+  @@index([doctorId, startTime, endTime, status])
   @@map("availability_slots")
 }
 
 model Consultation {
-  id                 String             @id @default(uuid())
-  slotId             String             @unique @map("slot_id")
-  slot               AvailabilitySlot   @relation(fields: [slotId], references: [id])
-  patientId          String             @map("patient_id")
-  patient            PatientProfile     @relation(fields: [patientId], references: [id])
-  doctorId           String             @map("doctor_id")
-  doctor             DoctorProfile      @relation(fields: [doctorId], references: [id])
-  status             ConsultationStatus @default(BOOKED)
-  mode               ConsultationMode   @default(VIDEO)
-  meetingRoomId      String?            @map("meeting_room_id")
-  meetingToken       String?            @map("meeting_token")
-  cancellationReason String?            @map("cancellation_reason")
-  consentRecorded    Boolean            @default(true) @map("consent_recorded")
-  clinicalNotes      String?            @map("clinical_notes") @db.Text
-  createdAt          DateTime           @default(now()) @map("created_at")
-  updatedAt          DateTime           @updatedAt @map("updated_at")
+  id                 String               @id @default(uuid())
+  slotId             String               @unique @map("slot_id")
+  slot               AvailabilitySlot     @relation(fields: [slotId], references: [id])
+  patientId          String               @map("patient_id")
+  patient            PatientProfile       @relation(fields: [patientId], references: [id])
+  doctorId           String               @map("doctor_id")
+  doctor             DoctorProfile        @relation(fields: [doctorId], references: [id])
+  status             ConsultationStatus   @default(BOOKED)
+  mode               ConsultationMode     @default(VIDEO)
+  meetingRoomId      String?              @map("meeting_room_id")
+  meetingToken       String?              @map("meeting_token")
+  cancellationReason String?              @map("cancellation_reason")
+  cancelledBy        String?              @map("cancelled_by")
+  consentRecorded    Boolean              @default(false) @map("consent_recorded")
+  consentTimestamp   DateTime?            @map("consent_timestamp")
+  clinicalNotes      String?              @map("clinical_notes") @db.Text
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
 
   prescriptions      Prescription[]
   payment            Payment?
+  consent            ConsultationConsent?
 
   @@index([patientId, status])
   @@index([doctorId, status])
   @@map("consultations")
+}
+
+model ConsultationConsent {
+  id             String         @id @default(uuid())
+  consultationId String         @unique @map("consultation_id")
+  consultation   Consultation   @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  patientId      String         @map("patient_id")
+  patient        PatientProfile @relation(fields: [patientId], references: [id])
+  consentType    ConsentType    @default(TELEMEDICINE_CONSULTATION) @map("consent_type")
+  version        String         @default("TPG_2020_V1")
+  granted        Boolean        @default(false)
+  timestamp      DateTime       @default(now())
+  ipAddress      String?        @map("ip_address")
+  userAgent      String?        @map("user_agent")
+
+  @@index([patientId])
+  @@map("consultation_consents")
 }
 
 model Prescription {
@@ -236,28 +291,40 @@ model Payment {
 }
 
 model PaymentWebhookEvent {
-  id             String          @id @default(uuid())
+  id             String             @id @default(uuid())
   provider       PaymentProvider
-  eventId        String          @map("event_id")
-  eventType      String          @map("event_type")
+  eventId        String             @map("event_id")
+  eventType      String             @map("event_type")
   payload        Json
-  signatureValid Boolean         @default(true) @map("signature_valid")
-  processedAt    DateTime        @default(now()) @map("processed_at")
+  signatureValid Boolean            @map("signature_valid")
+  status         WebhookEventStatus @default(RECEIVED)
+  errorMessage   String?            @map("error_message")
+  receivedAt     DateTime           @default(now()) @map("received_at")
+  processedAt    DateTime?          @map("processed_at")
 
   @@unique([provider, eventId], name: "provider_event_unique")
+  @@index([status, receivedAt])
   @@map("payment_webhook_events")
 }
 
 model IdempotencyRecord {
-  key            String   @id
-  userId         String?  @map("user_id")
-  requestHash    String   @map("request_hash")
-  responseStatus Int      @map("response_status")
-  responseBody   Json     @map("response_body")
-  createdAt      DateTime @default(now()) @map("created_at")
-  expiresAt      DateTime @map("expires_at")
+  id             String            @id @default(uuid())
+  scope          String
+  key            String
+  operation      String
+  requestHash    String            @map("request_hash")
+  status         IdempotencyStatus @default(PENDING_CLAIM)
+  responseStatus Int?              @map("response_status")
+  responseBody   Json?             @map("response_body")
+  claimedAt      DateTime          @default(now()) @map("claimed_at")
+  completedAt    DateTime?         @map("completed_at")
+  expiresAt      DateTime          @map("expires_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
 
+  @@unique([scope, operation, key], name: "scope_operation_key_unique")
   @@index([expiresAt])
+  @@index([status, claimedAt])
   @@map("idempotency_records")
 }
 

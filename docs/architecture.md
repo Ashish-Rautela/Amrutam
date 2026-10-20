@@ -14,16 +14,17 @@ The platform is organized as a **Modular Monolith** with clear domain separation
   - Rate Limiter (Redis / Memory)
   - Security Headers (Helmet, CORS)
   - Correlation ID Injector
-  - Idempotency Interceptor
+  - Scoped Idempotency Interceptor (PENDING_CLAIM -> COMPLETED)
                 |
                 v
 [Domain Modules]
-  - Auth & MFA (Argon2id, TOTP RFC 6238, JWT + Refresh Rotation)
-  - Doctor & Availability (Schedule Templates, Materialized Slots)
+  - Auth & Isolated MFA (AES-256-GCM, Argon2id Hashed Backup Codes)
+  - Doctor & Availability (Exclusion Constraints, Non-Overlapping Interval Engine)
   - Booking Engine (Pessimistic Row Locking, Zero Double-Booking)
+  - Explicit Consent Engine (TPG 2020 / DPDP 2023 Timestamped Consents)
   - Consultation Lifecycle (Strict FSM, Video Room Provider)
   - Prescription Engine (Immutable Versioning, Clinical Items)
-  - Payment Engine (HMAC Webhook Ingestion, Auto-Reconciliation)
+  - Payment Engine (HMAC Webhook Ingestion with RECEIVED -> PROCESSED FSM)
   - Search & Discovery (Composite Indexing, Redis Read Caching)
   - Audit Trail (Append-Only Tamper-Evident Store)
   - Administrative Analytics (Optimized Aggregate Metrics)
@@ -44,15 +45,28 @@ The platform is organized as a **Modular Monolith** with clear domain separation
 
 ## 3. Concurrency Control & Double Booking Prevention
 To prevent multiple patients from reserving the same doctor slot:
-1. **Pessimistic Row Locking:** During the booking transaction, the database locks the specific slot:
+1. **PostgreSQL Exclusion Constraints (btree_gist):**
+   ```sql
+   ALTER TABLE availability_slots
+   ADD CONSTRAINT no_overlapping_doctor_slots
+   EXCLUDE USING gist (
+     doctor_id WITH =,
+     tstzrange(start_time, end_time, '[)') WITH &&
+   )
+   WHERE (status != 'CANCELLED');
+   ```
+   This guarantees that overlapping time intervals for the same doctor are physically impossible at the storage engine level.
+2. **Pessimistic Row Locking:** During the booking transaction, the database locks the specific slot:
    ```sql
    SELECT * FROM availability_slots WHERE id = $1 FOR UPDATE;
    ```
-2. **Atomic Verification:** If the slot status is not `AVAILABLE`, the transaction rolls back and immediately responds with `409 Conflict`.
-3. **Database Exclusion & Unique Constraints:** A conditional unique index on `consultations(slot_id) WHERE status != 'CANCELLED'` ensures the database storage engine rejects any duplicate booking even if an application bug bypasses memory checks.
-4. **Idempotency Guard:** Every write request evaluates the `Idempotency-Key` header. Duplicate identical requests return the cached original response without reprocessing; conflicting payloads trigger `409 Conflict`.
+3. **Atomic Verification:** If the slot status is not `AVAILABLE`, the transaction rolls back and immediately responds with `409 Conflict`.
+4. **Conditional Unique Index on Bookings:** `CREATE UNIQUE INDEX uniq_active_slot_consultation ON consultations(slot_id) WHERE status != 'CANCELLED';`
+5. **Scoped Idempotency State Machine:** Every write evaluates `IdempotencyRecord` with `@@unique([scope, operation, key])`:
+   - State `PENDING_CLAIM`: Concurrent duplicates receive `409 Conflict` (request currently in flight).
+   - State `COMPLETED`: Returns cached response with `X-Idempotent-Replay: true`. Payload mismatch triggers `409 Conflict`.
 
-## 4. Consultation State Machine
+## 4. Consultation State Machine & Explicit Consent
 ```
 [BOOKED] ---> [CONFIRMED] ---> [IN_PROGRESS] ---> [COMPLETED]
    |              |                  |
@@ -61,9 +75,11 @@ To prevent multiple patients from reserving the same doctor slot:
 ```
 Transitions outside this state chart are rejected with `422 Unprocessable Entity`. Every transition writes an immutable audit record and emits a domain event to the transactional outbox.
 
-## 5. Prescription Immutability & Audit Trail
-Prescriptions are append-only. When an amendment is required:
-- A new record is created with `version = previous_version + 1`.
-- It references `parent_prescription_id`.
-- An explicit `amendment_reason` is mandatory.
-- The doctor's registration number (NMC) and cryptographic digital signature are attached.
+**Consent Policy:**
+- `consentRecorded` strictly defaults to `false`.
+- Every consultation requires an explicit `ConsultationConsent` entity with timestamp, patient ID, IP address, user-agent, and legal text version (`TPG_2020_V1`), satisfying the Indian Telemedicine Practice Guidelines (2020).
+
+## 5. Security & Secret Management
+1. **Zero Hardcoded Secrets:** Docker Compose and environment configuration strictly enforce `${VAR:?error}` syntax. The application boots through a Zod validator that halts startup if secrets are missing, too short (< 32 chars), or set to known placeholder strings.
+2. **Isolated MFA Storage:** `UserMfaCredential` is segregated from `User`. TOTP secrets are encrypted at rest using AES-256-GCM with separate IV and AuthTag. Backup codes are stored exclusively as salted hashes.
+3. **Safe Webhook Ingestion:** Payment webhooks initialize in `RECEIVED` state with `signatureValid` unasserted and `processedAt = null`. Only after cryptographic HMAC verification and transaction completion is the event marked `PROCESSED` with a recorded timestamp.

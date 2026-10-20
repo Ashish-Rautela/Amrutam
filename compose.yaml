@@ -4,15 +4,15 @@ services:
     container_name: amrutam_postgres
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-      POSTGRES_DB: amrutam_db
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be provided}"
+      POSTGRES_DB: "${POSTGRES_DB:-amrutam_db}"
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d amrutam_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-amrutam_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,7 +22,7 @@ services:
     container_name: amrutam_redis
     restart: always
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -38,17 +38,26 @@ services:
     container_name: amrutam_api
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "${PORT:-4000}:4000"
     environment:
-      NODE_ENV: production
-      PORT: 4000
-      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/amrutam_db?schema=public
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      JWT_ACCESS_SECRET: amrutam_super_secure_access_token_secret_min_32_chars
-      JWT_REFRESH_SECRET: amrutam_super_secure_refresh_token_secret_min_32_chars
-      DATA_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-      PAYMENT_GATEWAY_PROVIDER: MOCK
+      NODE_ENV: "${NODE_ENV:-production}"
+      PORT: "${PORT:-4000}"
+      DATABASE_URL: "${DATABASE_URL:?DATABASE_URL must be provided}"
+      REDIS_HOST: "${REDIS_HOST:-redis}"
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      JWT_ACCESS_SECRET: "${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be provided}"
+      JWT_ACCESS_EXPIRY: "${JWT_ACCESS_EXPIRY:-15m}"
+      JWT_REFRESH_SECRET: "${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be provided}"
+      JWT_REFRESH_EXPIRY: "${JWT_REFRESH_EXPIRY:-7d}"
+      DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY must be provided}"
+      PAYMENT_GATEWAY_PROVIDER: "${PAYMENT_GATEWAY_PROVIDER:-MOCK}"
+      RAZORPAY_KEY_ID: "${RAZORPAY_KEY_ID:-}"
+      RAZORPAY_KEY_SECRET: "${RAZORPAY_KEY_SECRET:-}"
+      RAZORPAY_WEBHOOK_SECRET: "${RAZORPAY_WEBHOOK_SECRET:-}"
+      TELEHEALTH_PROVIDER: "${TELEHEALTH_PROVIDER:-MOCK}"
+      TELEHEALTH_SECRET: "${TELEHEALTH_SECRET:-}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,10 +72,13 @@ services:
     restart: unless-stopped
     command: ["node", "dist/worker/index.js"]
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/amrutam_db?schema=public
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      NODE_ENV: "${NODE_ENV:-production}"
+      DATABASE_URL: "${DATABASE_URL:?DATABASE_URL must be provided}"
+      REDIS_HOST: "${REDIS_HOST:-redis}"
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY must be provided}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
     depends_on:
       postgres:
         condition: service_healthy

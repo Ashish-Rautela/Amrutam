@@ -1,0 +1,200 @@
+openapi: 3.1.0
+info:
+  title: Amrutam Telemedicine Backend API
+  version: 1.0.0
+  description: Production-grade REST API for Amrutam Telemedicine Platform supporting concurrency-safe appointment booking, consultation lifecycle management, immutable prescriptions, and payments.
+servers:
+  - url: http://localhost:4000/api/v1
+    description: Local Development Server
+paths:
+  /health/liveness:
+    get:
+      summary: Liveness Probe
+      responses:
+        '200':
+          description: Process is running
+  /health/readiness:
+    get:
+      summary: Readiness Probe
+      responses:
+        '200':
+          description: Database and Redis dependencies are connected
+        '503':
+          description: Dependent service unavailable
+  /metrics:
+    get:
+      summary: Prometheus Metrics
+      responses:
+        '200':
+          description: Plaintext Prometheus metrics
+  /auth/register:
+    post:
+      summary: Register a new user (Patient or Doctor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, phone, password, role, fullName]
+              properties:
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+                role:
+                  type: string
+                  enum: [PATIENT, DOCTOR]
+                fullName:
+                  type: string
+      responses:
+        '201':
+          description: User successfully registered
+        '400':
+          description: Validation error
+        '409':
+          description: Email or phone already registered
+  /auth/login:
+    post:
+      summary: User Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful (returns JWT or triggers MFA)
+        '401':
+          description: Invalid credentials
+  /auth/refresh:
+    post:
+      summary: Refresh Access Token
+      responses:
+        '200':
+          description: New access token generated
+        '401':
+          description: Invalid or revoked refresh token
+  /doctors:
+    get:
+      summary: Search and Filter Doctors
+      parameters:
+        - name: specialization
+          in: query
+          schema:
+            type: string
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [VIDEO, AUDIO, CHAT]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: Paginated list of verified doctors
+  /doctors/{id}/slots:
+    get:
+      summary: Get Available Slots for a Doctor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available appointment slots
+  /appointments/book:
+    post:
+      summary: Concurrency-Safe Appointment Booking
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slotId, consentGiven]
+              properties:
+                slotId:
+                  type: string
+                consentGiven:
+                  type: boolean
+      responses:
+        '201':
+          description: Appointment successfully booked
+        '409':
+          description: Slot already booked or concurrency conflict
+  /consultations/{id}/prescriptions:
+    post:
+      summary: Issue Immutable Prescription
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [diagnosis, items]
+              properties:
+                diagnosis:
+                  type: string
+                advice:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [medicineName, dosage, frequency, durationDays]
+                    properties:
+                      medicineName:
+                        type: string
+                      dosage:
+                        type: string
+                      frequency:
+                        type: string
+                      durationDays:
+                        type: integer
+      responses:
+        '201':
+          description: Prescription issued with version number
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

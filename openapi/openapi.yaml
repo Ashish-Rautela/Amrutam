@@ -2,65 +2,89 @@ openapi: 3.1.0
 info:
   title: Amrutam Telemedicine Backend API
   version: 1.0.0
-  description: Production-grade REST API for Amrutam Telemedicine Platform supporting concurrency-safe appointment booking, consultation lifecycle management, immutable prescriptions, and payments.
+  description: Production-grade REST API for Amrutam Telemedicine Platform supporting multi-role authentication, rotating refresh sessions, and RFC 6238 TOTP multi-factor authentication.
 servers:
   - url: http://localhost:4000/api/v1
     description: Local Development Server
 paths:
-  /health/liveness:
+  /health/live:
     get:
       summary: Liveness Probe
+      description: Returns HTTP 200 when the process event loop is responsive. Does not query database or cache.
       responses:
         '200':
           description: Process is running
-  /health/readiness:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  uptimeSeconds:
+                    type: integer
+                  timestamp:
+                    type: string
+                    format: date-time
+  /health/ready:
     get:
       summary: Readiness Probe
+      description: Checks PostgreSQL and Redis connectivity with bounded timeouts.
       responses:
         '200':
-          description: Database and Redis dependencies are connected
+          description: All critical dependencies are healthy
         '503':
-          description: Dependent service unavailable
-  /metrics:
-    get:
-      summary: Prometheus Metrics
-      responses:
-        '200':
-          description: Plaintext Prometheus metrics
+          description: One or more critical dependencies are unreachable
   /auth/register:
     post:
-      summary: Register a new user (Patient or Doctor)
+      summary: Register a new patient
+      description: Public self-registration for patients only. Doctors and Administrators cannot be registered publicly.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, phone, password, role, fullName]
+              required: [email, phone, password, fullName]
               properties:
                 email:
                   type: string
                   format: email
+                  example: patient@example.com
                 phone:
                   type: string
+                  example: "+919876543210"
                 password:
                   type: string
                   minLength: 8
-                role:
-                  type: string
-                  enum: [PATIENT, DOCTOR]
+                  maxLength: 128
+                  example: "SuperSecurePassword123!"
                 fullName:
                   type: string
+                  minLength: 2
+                  maxLength: 100
+                  example: "Aarav Sharma"
+                gender:
+                  type: string
+                  enum: [MALE, FEMALE, OTHER]
+                dateOfBirth:
+                  type: string
+                  format: date
+                  example: "1990-05-15"
       responses:
         '201':
-          description: User successfully registered
+          description: Patient account created successfully
         '400':
           description: Validation error
         '409':
           description: Email or phone already registered
+        '429':
+          description: Too many registration attempts
   /auth/login:
     post:
       summary: User Login
+      description: Authenticates user credentials. Returns JWT access and refresh tokens, or a temporary MFA challenge token if MFA is enabled.
       requestBody:
         required: true
         content:
@@ -71,68 +95,105 @@ paths:
               properties:
                 email:
                   type: string
+                  format: email
                 password:
                   type: string
       responses:
         '200':
-          description: Login successful (returns JWT or triggers MFA)
+          description: Login successful (or MFA challenge required)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      mfaRequired:
+                        type: boolean
+                      tempToken:
+                        type: string
+                      user:
+                        type: object
+                      tokens:
+                        type: object
         '401':
-          description: Invalid credentials
+          description: Invalid email or password (anti-enumeration)
+        '429':
+          description: Rate limit exceeded
+  /auth/mfa/challenge:
+    post:
+      summary: Complete Login via MFA Code or Backup Recovery Code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tempToken, code]
+              properties:
+                tempToken:
+                  type: string
+                code:
+                  type: string
+                  description: 6-digit TOTP code or single-use 8-character recovery code
+                  example: "123456"
+      responses:
+        '200':
+          description: MFA challenge completed; access tokens issued
+        '401':
+          description: Invalid or expired temporary token or verification code
   /auth/refresh:
     post:
-      summary: Refresh Access Token
+      summary: Refresh Access Token with Token Family Rotation
+      description: Exchanges an active refresh token for a new access token and rotated refresh token. Detects token reuse and revokes token families if reuse is detected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
       responses:
         '200':
-          description: New access token generated
+          description: New token pair issued
         '401':
-          description: Invalid or revoked refresh token
-  /doctors:
-    get:
-      summary: Search and Filter Doctors
-      parameters:
-        - name: specialization
-          in: query
-          schema:
-            type: string
-        - name: mode
-          in: query
-          schema:
-            type: string
-            enum: [VIDEO, AUDIO, CHAT]
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 20
-        - name: page
-          in: query
-          schema:
-            type: integer
-            default: 1
-      responses:
-        '200':
-          description: Paginated list of verified doctors
-  /doctors/{id}/slots:
-    get:
-      summary: Get Available Slots for a Doctor
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Available appointment slots
-  /appointments/book:
+          description: Invalid, expired, or reused refresh token
+  /auth/logout:
     post:
-      summary: Concurrency-Safe Appointment Booking
-      parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
+      summary: Revoke Current Refresh Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Session revoked successfully
+  /auth/logout-all:
+    post:
+      summary: Revoke All Active Sessions for User
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: All user sessions revoked
+        '401':
+          description: Unauthorized
+  /auth/mfa/enroll:
+    post:
+      summary: Initiate TOTP MFA Enrollment
       security:
         - BearerAuth: []
       requestBody:
@@ -141,57 +202,69 @@ paths:
           application/json:
             schema:
               type: object
-              required: [slotId, consentGiven]
+              required: [password]
               properties:
-                slotId:
+                password:
                   type: string
-                consentGiven:
-                  type: boolean
+                  description: Current password re-verification
       responses:
-        '201':
-          description: Appointment successfully booked
-        '409':
-          description: Slot already booked or concurrency conflict
-  /consultations/{id}/prescriptions:
+        '200':
+          description: Enrollment payload with secret, QR code, and 8 single-use recovery codes
+        '401':
+          description: Unauthorized or password verification failed
+  /auth/mfa/verify-enrollment:
     post:
-      summary: Issue Immutable Prescription
+      summary: Verify Enrollment & Officially Activate MFA
       security:
         - BearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [diagnosis, items]
+              required: [totpCode]
               properties:
-                diagnosis:
+                totpCode:
                   type: string
-                advice:
-                  type: string
-                items:
-                  type: array
-                  items:
-                    type: object
-                    required: [medicineName, dosage, frequency, durationDays]
-                    properties:
-                      medicineName:
-                        type: string
-                      dosage:
-                        type: string
-                      frequency:
-                        type: string
-                      durationDays:
-                        type: integer
+                  example: "654321"
       responses:
-        '201':
-          description: Prescription issued with version number
+        '200':
+          description: MFA successfully activated
+        '400':
+          description: Invalid 6-digit verification code
+  /auth/mfa/disable:
+    post:
+      summary: Disable MFA
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, code]
+              properties:
+                password:
+                  type: string
+                code:
+                  type: string
+      responses:
+        '200':
+          description: MFA disabled
+        '401':
+          description: Invalid password or code
+  /auth/me:
+    get:
+      summary: Get Current Authenticated User Profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile details without sensitive hashes or secrets
+        '401':
+          description: Unauthorized
 components:
   securitySchemes:
     BearerAuth:

@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { config } from './config/index.js';
 import { httpLogger } from './common/observability/logger.js';
 import { healthRouter } from './common/health/health.routes.js';
+import { authRouter } from './modules/auth/auth.routes.js';
 import { errorHandler, notFoundHandler } from './common/middleware/error.middleware.js';
 
 export const app = express();
@@ -60,8 +61,11 @@ if (config.API_PREFIX !== '') {
   app.use(`${config.API_PREFIX}/health`, healthRouter);
 }
 
-// 7. Route 404 Handler
+// 7. Domain Routes
+app.use(`${config.API_PREFIX}/auth`, authRouter);
+
+// 8. Route 404 Handler
 app.use(notFoundHandler);
 
-// 8. Centralized Global Error Handler
+// 9. Centralized Global Error Handler
 app.use(errorHandler);

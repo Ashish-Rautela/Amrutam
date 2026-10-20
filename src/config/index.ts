@@ -55,6 +55,11 @@ export const envSchema = z
     JWT_ACCESS_EXPIRY: z.string().default('15m'),
     JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters long'),
     JWT_REFRESH_EXPIRY: z.string().default('7d'),
+    JWT_ISSUER: z.string().default('amrutam-telemedicine'),
+    JWT_AUDIENCE: z.string().default('amrutam-api'),
+
+    AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
+    AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(15 * 60 * 1000),
 
     DATA_ENCRYPTION_KEY: z
       .string()

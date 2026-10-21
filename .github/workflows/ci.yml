@@ -1,15 +1,25 @@
-name: CI Pipeline
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, main, develop ]
+    tags: [ 'v*.*.*', 'v*.*', 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ master, main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-test:
-    name: Lint, Test & Validate
+  test-and-validate:
+    name: Validate, Lint, Test & Verify Containers
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     services:
       postgres:
@@ -49,13 +59,19 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Run TypeScript Type Check
-        run: npm run lint
+      - name: Validate Prisma Schema
+        run: npx prisma validate
 
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Run Prisma Migrations
+      - name: Run TypeScript Type Check & Lint
+        run: npm run lint
+
+      - name: Compile Production Build
+        run: npm run build
+
+      - name: Apply Prisma Database Migrations
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
         run: npx prisma migrate deploy
@@ -63,7 +79,7 @@ jobs:
       - name: Run Unit Tests
         run: npm run test:unit
 
-      - name: Run Concurrency & Integration Tests
+      - name: Run Integration Tests
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
           REDIS_HOST: localhost
@@ -71,4 +87,108 @@ jobs:
           JWT_ACCESS_SECRET: test_access_secret_min_32_characters_long
           JWT_REFRESH_SECRET: test_refresh_secret_min_32_characters_long
           DATA_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          PAYMENT_GATEWAY_PROVIDER: MOCK
+          TELEHEALTH_PROVIDER: MOCK
+          TELEHEALTH_SECRET: mock_telehealth_signing_secret_min_32_chars
         run: npm run test:integration
+
+      - name: Run Concurrency Race Condition Tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_ACCESS_SECRET: test_access_secret_min_32_characters_long
+          JWT_REFRESH_SECRET: test_refresh_secret_min_32_characters_long
+          DATA_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          PAYMENT_GATEWAY_PROVIDER: MOCK
+          TELEHEALTH_PROVIDER: MOCK
+          TELEHEALTH_SECRET: mock_telehealth_signing_secret_min_32_chars
+        run: npm run test:concurrency
+
+      - name: Run Security & Access Control Tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_ACCESS_SECRET: test_access_secret_min_32_characters_long
+          JWT_REFRESH_SECRET: test_refresh_secret_min_32_characters_long
+          DATA_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          PAYMENT_GATEWAY_PROVIDER: MOCK
+          TELEHEALTH_PROVIDER: MOCK
+          TELEHEALTH_SECRET: mock_telehealth_signing_secret_min_32_chars
+        run: npm run test:security
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose --env-file .env.example config
+
+      - name: Build API & Worker Images (Pre-release Verification)
+        run: |
+          docker build --target api -t amrutam-api:ci .
+          docker build --target worker -t amrutam-worker:ci .
+
+  publish-images:
+    name: Build & Publish Container Images (GHCR)
+    needs: [test-and-validate]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Metadata for API Image
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-api
+          tags: |
+            type=sha,format=long,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and Push API Container Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: api
+          push: true
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract Metadata for Worker Image
+        id: meta-worker
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-worker
+          tags: |
+            type=sha,format=long,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and Push Worker Container Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          push: true
+          tags: ${{ steps.meta-worker.outputs.tags }}
+          labels: ${{ steps.meta-worker.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

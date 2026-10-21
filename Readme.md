@@ -122,3 +122,69 @@ The API implements database-backed scoped idempotency (`IdempotencyRecord`) on s
 - **Identical Replay**: If a completed request is replayed with the identical payload, the cached response is returned (**200/201**) with header `X-Cache-Lookup: HIT`.
 - **Payload Mismatch / Key Reuse**: If an existing key is reused with a *different* request body, the server rejects it with **400 Bad Request** (`Idempotency key reused with different request payload`).
 
+---
+
+## Continuous Integration & Continuous Delivery (CI/CD)
+
+The repository includes an enterprise-grade GitHub Actions automation pipeline defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+### 1. CI Pipeline (`test-and-validate`)
+Runs automatically on:
+- **Pull Requests** targeting `master` or `main`.
+- **Pushes** to `master`, `main`, and `develop`.
+- **Release Tags** matching `v*.*.*`.
+
+Includes automatic concurrency cancellation (`cancel-in-progress: true`) and least-privilege permissions (`contents: read`).
+
+#### CI Stages & Execution Flow:
+1. **Isolated Service Containers**: Boots PostgreSQL 16 (`postgres:16-alpine`) and Redis 7 (`redis:7-alpine`) with health checks (`pg_isready`, `redis-cli ping`).
+2. **Environment & Dependency Setup**: Reproducible installation with Node.js 20 LTS via `npm ci` with NPM cache.
+3. **Prisma Validation & Client Generation**: Validates schema syntax (`npx prisma validate`) and compiles multi-target client (`npx prisma generate`).
+4. **Static Analysis & Type Checking**: Enforces TypeScript compilation rules (`npm run lint` / `tsc --noEmit`).
+5. **Production Build**: Compiles production bundles to `dist/` (`npm run build`).
+6. **Database Migration Verification**: Executes versioned SQL migrations (`npx prisma migrate deploy`) against disposable test DB.
+7. **Comprehensive Automated Test Suites**:
+   - `npm run test:unit`: In-memory configuration, cryptographic cipher, TOTP, and token tests.
+   - `npm run test:integration`: End-to-end API integration tests across auth, doctors, availability, bookings, consultations, prescriptions, and payments.
+   - `npm run test:concurrency`: High-concurrency race condition tests (validating zero double-booking under parallel bursts).
+   - `npm run test:security`: Access control, IDOR, token revocation, and MFA tamper verification.
+8. **Docker Compose Validation**: Validates orchestration file integrity (`docker compose --env-file .env.example config`).
+9. **Container Image Pre-flight Build**: Builds both API (`--target api`) and Worker (`--target worker`) Docker images to catch Dockerfile errors prior to delivery.
+
+---
+
+### 2. CD Pipeline (`publish-images`)
+Triggered strictly after `test-and-validate` passes on:
+- Pushes to the primary branch (`master` / `main`).
+- Semantic version release tags (`v*`).
+
+*Untrusted pull requests cannot publish images.*
+
+#### Container Versioning & Registry Publishing:
+- **Registry**: GitHub Container Registry (`ghcr.io`).
+- **Images Published**:
+  - `ghcr.io/<owner>/amrutam-backend-api`
+  - `ghcr.io/<owner>/amrutam-backend-worker`
+- **Tagging Strategy**:
+  - **Immutable Commit SHA**: `sha-<commit_sha>` (ensures exact trace to git commit).
+  - **Branch Name**: `master` or `main`.
+  - **Semantic Release Tag**: `v1.0.0` (when triggered via git tag).
+  - **`latest`**: Updated only on the primary default branch.
+- **Security & Caching**: Uses GitHub Actions Buildx caching (`type=gha,mode=max`) and repository-scoped `GITHUB_TOKEN` with least-privilege `packages: write`.
+
+---
+
+### 3. Required Repository Settings & Secrets
+To enable automated package publishing to GHCR:
+1. Navigate to **Settings > Actions > General > Workflow permissions**.
+2. Select **Read and write permissions** (or grant Package read/write to `GITHUB_TOKEN`).
+3. Allow GitHub Actions to approve/create pull requests if release automation is used.
+4. **No external cloud credentials needed for CI/CD container publishing**: The pipeline uses standard GitHub Actions token authentication (`${{ secrets.GITHUB_TOKEN }}`).
+
+---
+
+### 4. Deployment Target Status
+- **Current State**: Container delivery to GHCR is fully automated with immutable SHA tagging.
+- **Unconfigured Target Platform**: The original specification does not designate a specific cloud runtime (e.g. AWS ECS/Fargate, AWS EKS, GCP Cloud Run, or Fly.io).
+- **Next Step**: Once a live runtime target is selected and hosting credentials (e.g., AWS IAM role / EKS kubeconfig) are provided, the CD pipeline can be extended with a rolling update deployment job.
+

@@ -2,6 +2,7 @@
 FROM node:20-alpine AS builder
 
 WORKDIR /app
+RUN apk add --no-cache openssl libc6-compat
 
 # Install build dependencies
 COPY package*.json ./
@@ -14,11 +15,12 @@ COPY src ./src
 RUN npx prisma generate
 RUN npm run build
 
-# Production stage
-FROM node:20-alpine AS runner
+# Production base stage
+FROM node:20-alpine AS runner-base
 
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache openssl libc6-compat
 
 COPY package*.json ./
 RUN npm ci --only=production
@@ -32,6 +34,11 @@ COPY openapi ./openapi
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
-EXPOSE 4000
+# Worker stage
+FROM runner-base AS worker
+CMD ["node", "dist/worker/index.js"]
 
+# API stage (default)
+FROM runner-base AS api
+EXPOSE 4000
 CMD ["node", "dist/server.js"]

@@ -35,6 +35,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: api
     container_name: amrutam_api
     restart: unless-stopped
     ports:
@@ -68,6 +69,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: worker
     container_name: amrutam_worker
     restart: unless-stopped
     command: ["node", "dist/worker/index.js"]

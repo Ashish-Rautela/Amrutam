@@ -21,6 +21,19 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      JWT_ACCESS_SECRET: test_access_secret_min_32_characters_long
+      JWT_REFRESH_SECRET: test_refresh_secret_min_32_characters_long
+      DATA_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      PAYMENT_GATEWAY_PROVIDER: MOCK
+      TELEHEALTH_PROVIDER: MOCK
+      TELEHEALTH_SECRET: mock_telehealth_signing_secret_min_32_chars
+      PORT: 4000
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -72,50 +85,18 @@ jobs:
         run: npm run build
 
       - name: Apply Prisma Database Migrations
-        env:
-          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
         run: npx prisma migrate deploy
 
       - name: Run Unit Tests
         run: npm run test:unit
 
       - name: Run Integration Tests
-        env:
-          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          JWT_ACCESS_SECRET: test_access_secret_min_32_characters_long
-          JWT_REFRESH_SECRET: test_refresh_secret_min_32_characters_long
-          DATA_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-          PAYMENT_GATEWAY_PROVIDER: MOCK
-          TELEHEALTH_PROVIDER: MOCK
-          TELEHEALTH_SECRET: mock_telehealth_signing_secret_min_32_chars
         run: npm run test:integration
 
       - name: Run Concurrency Race Condition Tests
-        env:
-          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          JWT_ACCESS_SECRET: test_access_secret_min_32_characters_long
-          JWT_REFRESH_SECRET: test_refresh_secret_min_32_characters_long
-          DATA_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-          PAYMENT_GATEWAY_PROVIDER: MOCK
-          TELEHEALTH_PROVIDER: MOCK
-          TELEHEALTH_SECRET: mock_telehealth_signing_secret_min_32_chars
         run: npm run test:concurrency
 
       - name: Run Security & Access Control Tests
-        env:
-          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          JWT_ACCESS_SECRET: test_access_secret_min_32_characters_long
-          JWT_REFRESH_SECRET: test_refresh_secret_min_32_characters_long
-          DATA_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-          PAYMENT_GATEWAY_PROVIDER: MOCK
-          TELEHEALTH_PROVIDER: MOCK
-          TELEHEALTH_SECRET: mock_telehealth_signing_secret_min_32_chars
         run: npm run test:security
 
       - name: Validate Docker Compose Configuration

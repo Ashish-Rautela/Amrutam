@@ -11,7 +11,7 @@ Production-Grade, Concurrency-Safe, and Highly Scalable Telemedicine Backend Arc
 - **Concurrency Control:** Pessimistic Row-Level Locking (`SELECT FOR UPDATE`) & Database Constraints (Zero Double-Booking Guarantee)
 - **Idempotent Writes:** HTTP `Idempotency-Key` tracking with payload SHA-256 fingerprinting
 - **Asynchronous Processing:** Transactional Outbox Pattern (`FOR UPDATE SKIP LOCKED`) for reliable notification and reminder dispatch
-- **Security:** RFC 6238 TOTP Multi-Factor Authentication (MFA), Argon2id/Bcrypt password hashing, JWT Access + Rotating Refresh Tokens, ABAC ownership verification
+- **Security:** RFC 6238 TOTP Multi-Factor Authentication (MFA), Bcrypt (work factor 12) password hashing, JWT Access + Rotating Refresh Tokens, ABAC ownership verification
 - **Observability:** Structured JSON logging (Pino), Prometheus RED metrics (`/metrics`), Liveness/Readiness probes (`/health/liveness`, `/health/readiness`)
 - **Compliance:** Indian Telemedicine Practice Guidelines (2020) & DPDP Act (2023)
 
@@ -85,7 +85,7 @@ npm install
 ### 3. Database Migration & Client Generation
 ```bash
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
 ```
 
 ### 4. Running via Docker Compose
@@ -113,3 +113,12 @@ npm run test:concurrency
 # Run security & IDOR tests
 npm run test:security
 ```
+
+---
+
+## HTTP Idempotency Contract (`Idempotency-Key`)
+The API implements database-backed scoped idempotency (`IdempotencyRecord`) on state-mutating endpoints (`/bookings`, `/payments/orders`):
+- **Concurrent In-Flight Request**: If a request arrives while an identical key is still processing (`PENDING_CLAIM`), the server responds with **409 Conflict**.
+- **Identical Replay**: If a completed request is replayed with the identical payload, the cached response is returned (**200/201**) with header `X-Cache-Lookup: HIT`.
+- **Payload Mismatch / Key Reuse**: If an existing key is reused with a *different* request body, the server rejects it with **400 Bad Request** (`Idempotency key reused with different request payload`).
+

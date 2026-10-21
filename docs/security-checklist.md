@@ -3,7 +3,7 @@
 | Check Item | Status | Verification Detail |
 |---|---|---|
 | **Secret Management & Startup Validation** | Verified | Zero hardcoded secrets in `compose.yaml`. Zod environment validator blocks process startup if secrets are missing, < 32 chars, or matching placeholder strings. |
-| **Authentication & Password Storage** | Verified | Salted hashing using Bcrypt/Argon2id. No plaintext passwords stored. |
+| **Authentication & Password Storage** | Verified | Salted hashing using Bcrypt (work factor 12 via `bcryptjs`). Constant-time comparison on invalid lookups prevents timing enumeration. No plaintext passwords stored. |
 | **Multi-Factor Authentication (MFA)** | Verified | Isolated `UserMfaCredential` model. TOTP secrets encrypted with AES-256-GCM. Backup codes stored as one-way cryptographic hashes. |
 | **Token Lifecycle & Revocation** | Verified | 15-minute JWT access tokens. Refresh tokens tracked in database with instant single-session or all-session revocation. |
 | **Broken Object-Level Auth (BOLA / IDOR)** | Verified | ABAC middleware verifies resource ownership on consultations, prescriptions, and medical records before DB dispatch. |

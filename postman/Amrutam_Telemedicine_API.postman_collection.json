@@ -1,0 +1,1451 @@
+{
+  "info": {
+    "name": "Amrutam Telemedicine Backend API",
+    "_postman_id": "amrutam-telemedicine-collection-v1",
+    "description": "Production-Grade Telemedicine Backend API for Amrutam. Features automated variable capture across all requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "patientToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "patientRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "doctorToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "doctorId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "slotId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "slotStartTime",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "slotEndTime",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "consultationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idemKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "providerOrderId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "webhookEventId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health & Probes",
+      "item": [
+        {
+          "name": "1.1 Liveness Probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:4000/health/live",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "health",
+                "live"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Liveness status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Readiness Probe (PostgreSQL & Redis)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:4000/health/ready",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "health",
+                "ready"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Readiness status is 200 OK and datastores are up', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.status).to.eql('ready');",
+                  "    pm.expect(res.components.database).to.eql('up');",
+                  "    pm.expect(res.components.cache).to.eql('up');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:4000/metrics",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "metrics"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Metrics returned 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Auth & Identity",
+      "item": [
+        {
+          "name": "2.1 Patient Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"patient@amrutam.co.in\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/auth/login",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Patient login successful (200 OK)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const json = pm.response.json();",
+                  "    const tokens = json.data?.tokens || json.data;",
+                  "    const accessToken = tokens?.accessToken;",
+                  "    const refreshToken = tokens?.refreshToken;",
+                  "    pm.expect(accessToken).to.be.a(\"string\");",
+                  "    pm.environment.set(\"patientToken\", accessToken);",
+                  "    pm.collectionVariables.set(\"patientToken\", accessToken);",
+                  "    if (refreshToken) {",
+                  "        pm.environment.set(\"patientRefreshToken\", refreshToken);",
+                  "        pm.collectionVariables.set(\"patientRefreshToken\", refreshToken);",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Doctor Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"doctor@amrutam.co.in\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/auth/login",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Doctor login successful (200 OK)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const json = pm.response.json();",
+                  "    const tokens = json.data?.tokens || json.data;",
+                  "    const accessToken = tokens?.accessToken;",
+                  "    pm.expect(accessToken).to.be.a(\"string\");",
+                  "    pm.environment.set(\"doctorToken\", accessToken);",
+                  "    pm.collectionVariables.set(\"doctorToken\", accessToken);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 Administrator Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@amrutam.co.in\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/auth/login",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Admin login successful (200 OK)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const json = pm.response.json();",
+                  "    const tokens = json.data?.tokens || json.data;",
+                  "    const accessToken = tokens?.accessToken;",
+                  "    pm.expect(accessToken).to.be.a(\"string\");",
+                  "    pm.environment.set(\"adminToken\", accessToken);",
+                  "    pm.collectionVariables.set(\"adminToken\", accessToken);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 Token Refresh & Family Rotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{patientRefreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/auth/refresh",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get(\"patientRefreshToken\")) {",
+                  "    pm.sendRequest({",
+                  "        url: \"http://localhost:4000/api/v1/auth/login\",",
+                  "        method: \"POST\",",
+                  "        header: { \"Content-Type\": \"application/json\" },",
+                  "        body: { mode: \"raw\", raw: JSON.stringify({ email: \"patient@amrutam.co.in\", password: \"Password123!\" }) }",
+                  "    }, function (err, res) {",
+                  "        if (!err && res.code === 200) {",
+                  "            const data = res.json().data;",
+                  "            const token = data.tokens?.refreshToken || data.refreshToken;",
+                  "            pm.environment.set(\"patientRefreshToken\", token);",
+                  "            pm.collectionVariables.set(\"patientRefreshToken\", token);",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Token refreshed and rotated (200 OK)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const json = pm.response.json();",
+                  "    const tokens = json.data?.tokens || json.data;",
+                  "    const accessToken = tokens?.accessToken;",
+                  "    const refreshToken = tokens?.refreshToken;",
+                  "    if (accessToken) {",
+                  "        pm.environment.set(\"patientToken\", accessToken);",
+                  "        pm.collectionVariables.set(\"patientToken\", accessToken);",
+                  "    }",
+                  "    if (refreshToken) {",
+                  "        pm.environment.set(\"patientRefreshToken\", refreshToken);",
+                  "        pm.collectionVariables.set(\"patientRefreshToken\", refreshToken);",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 Current User Profile (/me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:4000/api/v1/auth/me",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Current user profile retrieved (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.email).to.eql('patient@amrutam.co.in');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Scheduling & Doctor Availability",
+      "item": [
+        {
+          "name": "3.1 Search Verified Doctors",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:4000/api/v1/doctors?specialization=Ayurvedic%20Medicine",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "doctors"
+              ],
+              "query": [
+                {
+                  "key": "specialization",
+                  "value": "Ayurvedic Medicine"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Doctors directory returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const json = pm.response.json();",
+                  "    if (json.data && json.data.length > 0) {",
+                  "        pm.environment.set('doctorId', json.data[0].id);",
+                  "        pm.collectionVariables.set('doctorId', json.data[0].id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 Create Availability Slot (Doctor)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Generate dynamic future slot time 2 days from now",
+                  "const target = new Date();",
+                  "target.setDate(target.getDate() + 2);",
+                  "target.setHours(14, 0, 0, 0);",
+                  "const end = new Date(target);",
+                  "end.setMinutes(30);",
+                  "pm.environment.set('slotStartTime', target.toISOString());",
+                  "pm.collectionVariables.set('slotStartTime', target.toISOString());",
+                  "pm.environment.set('slotEndTime', end.toISOString());",
+                  "pm.collectionVariables.set('slotEndTime', end.toISOString());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Slot created successfully (201 Created)', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const json = pm.response.json();",
+                  "    if (json.data && json.data.length > 0) {",
+                  "        pm.environment.set('slotId', json.data[0].id);",
+                  "        pm.collectionVariables.set('slotId', json.data[0].id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{doctorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slots\": [\n    {\n      \"startTime\": \"{{slotStartTime}}\",\n      \"endTime\": \"{{slotEndTime}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/availability/slots",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "availability",
+                "slots"
+              ]
+            }
+          }
+        },
+        {
+          "name": "3.3 Overlap Conflict Test (PostgreSQL btree_gist)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{doctorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slots\": [\n    {\n      \"startTime\": \"{{slotStartTime}}\",\n      \"endTime\": \"{{slotEndTime}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/availability/slots",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "availability",
+                "slots"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Overlapping slot rejected by PostgreSQL (409 Conflict)', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Bookings & Concurrency",
+      "item": [
+        {
+          "name": "4.1 Book Slot (Patient with Idempotency-Key)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Generate unique idempotency key for this demo run",
+                  "const key = 'idem-demo-' + Date.now();",
+                  "pm.environment.set('idemKey', key);",
+                  "pm.collectionVariables.set('idemKey', key);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Booking created successfully (201 Created)', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('consultationId', json.data.id);",
+                  "    pm.collectionVariables.set('consultationId', json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idemKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotId\": \"{{slotId}}\",\n  \"mode\": \"VIDEO\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/bookings",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            }
+          }
+        },
+        {
+          "name": "4.2 Idempotent Replay (Identical Request)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idemKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotId\": \"{{slotId}}\",\n  \"mode\": \"VIDEO\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/bookings",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Idempotent replay returns cached 201 with X-Cache-Lookup HIT', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    pm.expect(pm.response.headers.get('X-Cache-Lookup')).to.eql('HIT');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 Idempotency Payload Mismatch (Key Reuse with Altered Body)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idemKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotId\": \"{{slotId}}\",\n  \"mode\": \"AUDIO\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/bookings",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Payload mismatch rejected with 400 Bad Request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 Booking Collision (Zero Double-Booking)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "collision-test-key-999"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotId\": \"{{slotId}}\",\n  \"mode\": \"VIDEO\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/bookings",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Collision rejected: slot already booked (409 Conflict)', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 Get Booking Details by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:4000/api/v1/bookings/{{consultationId}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "bookings",
+                "{{consultationId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Booking details retrieved (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.id).to.eql(pm.variables.get('consultationId'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Legal Consent (TPG 2020) & Clinical Workflow",
+      "item": [
+        {
+          "name": "5.1 Doctor Attempt Start Before Consent (Fails)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{doctorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:4000/api/v1/consultations/{{consultationId}}/start",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "consultations",
+                "{{consultationId}}",
+                "start"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Starting without consent rejected (400 Bad Request)', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 Patient Grants Mandatory TPG 2020 Informed Consent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"granted\": true,\n  \"consentType\": \"TELEMEDICINE_CONSULTATION\",\n  \"version\": \"TPG_2020_V1\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/consultations/{{consultationId}}/consent",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "consultations",
+                "{{consultationId}}",
+                "consent"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Patient consent recorded (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.consentRecorded).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 Doctor Starts Teleconsultation (Succeeds with WebRTC Tokens)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{doctorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:4000/api/v1/consultations/{{consultationId}}/start",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "consultations",
+                "{{consultationId}}",
+                "start"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Consultation started (200 OK) with WebRTC room', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json().data;",
+                  "    pm.expect(res.status).to.eql('IN_PROGRESS');",
+                  "    pm.expect(res.meetingRoomId).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.4 Doctor Completes Consultation & Records Clinical Notes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{doctorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clinicalNotes\": \"Patient presents with Vata aggravation and fatigue. Prescribed adaptogenic herbal regimen.\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/consultations/{{consultationId}}/complete",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "consultations",
+                "{{consultationId}}",
+                "complete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Consultation completed (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.status).to.eql('COMPLETED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Prescriptions",
+      "item": [
+        {
+          "name": "6.1 Doctor Issues Immutable Digital Prescription (HMAC Signed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{doctorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diagnosis\": \"Vata Vyadhi (Stress-induced fatigue)\",\n  \"advice\": \"Drink warm herbal infusions and ensure adequate sleep\",\n  \"items\": [\n    {\n      \"medicineName\": \"Ashwagandha Churna\",\n      \"dosage\": \"3g\",\n      \"frequency\": \"Twice daily with warm milk\",\n      \"durationDays\": 14,\n      \"instructions\": \"Take after meals\"\n    },\n    {\n      \"medicineName\": \"Brahmi Vati\",\n      \"dosage\": \"1 tablet\",\n      \"frequency\": \"Once daily at bedtime\",\n      \"durationDays\": 14,\n      \"instructions\": \"Swallow with warm water\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/consultations/{{consultationId}}/prescriptions",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "consultations",
+                "{{consultationId}}",
+                "prescriptions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Prescription issued (201 Created) with HMAC signature\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const res = pm.response.json().data;",
+                  "    pm.expect(res.version).to.be.at.least(1);",
+                  "    pm.expect(res.doctorSignature).to.be.a(\"string\");",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 Patient Retrieves Prescription",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:4000/api/v1/consultations/{{consultationId}}/prescriptions",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "consultations",
+                "{{consultationId}}",
+                "prescriptions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Prescription retrieved (200 OK)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json().data;",
+                  "    pm.expect(res.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Payments & Webhooks",
+      "item": [
+        {
+          "name": "7.1 Patient Creates Authoritative Server-Priced Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{patientToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultationId\": \"{{consultationId}}\",\n  \"provider\": \"MOCK\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/payments/create-order",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "create-order"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Payment order created (201 Created)', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const res = pm.response.json().data;",
+                  "    pm.environment.set('providerOrderId', res.providerOrderId);",
+                  "    pm.collectionVariables.set('providerOrderId', res.providerOrderId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 Payment Gateway Webhook (Capture & Confirm)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const eventId = 'evt_demo_' + Date.now();",
+                  "pm.environment.set('webhookEventId', eventId);",
+                  "pm.collectionVariables.set('webhookEventId', eventId);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Webhook processed (200 OK, duplicate: false)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().duplicate).to.eql(false);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-payment-provider",
+                "value": "MOCK"
+              },
+              {
+                "key": "x-mock-signature",
+                "value": "mock-valid-signature"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{webhookEventId}}\",\n  \"event\": \"payment.captured\",\n  \"orderId\": \"{{providerOrderId}}\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/payments/webhook",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "webhook"
+              ]
+            }
+          }
+        },
+        {
+          "name": "7.3 Webhook Replay Deduplication Test",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-payment-provider",
+                "value": "MOCK"
+              },
+              {
+                "key": "x-mock-signature",
+                "value": "mock-valid-signature"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{webhookEventId}}\",\n  \"event\": \"payment.captured\",\n  \"orderId\": \"{{providerOrderId}}\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/v1/payments/webhook",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "webhook"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Duplicate webhook ignored safely (200 OK, duplicate: true)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().duplicate).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Security & ABAC Isolation",
+      "item": [
+        {
+          "name": "8.1 Cross-Patient Access Denied (IDOR Defense)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer invalid_unauthorized_token"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:4000/api/v1/consultations/{{consultationId}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "consultations",
+                "{{consultationId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Cross-patient access blocked (401 or 403)', function () {",
+                  "    pm.expect([401, 403]).to.include(pm.response.code);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.2 Admin Platform Overview Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:4000/api/v1/admin/analytics/overview",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "4000",
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "analytics",
+                "overview"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"adminToken\") && !pm.environment.get(\"adminToken\")) {",
+                  "    pm.sendRequest({",
+                  "        url: \"http://localhost:4000/api/v1/auth/login\",",
+                  "        method: \"POST\",",
+                  "        header: { \"Content-Type\": \"application/json\" },",
+                  "        body: {",
+                  "            mode: \"raw\",",
+                  "            raw: JSON.stringify({ email: \"admin@amrutam.co.in\", password: \"Password123!\" })",
+                  "        }",
+                  "    }, function (err, res) {",
+                  "        if (!err && res.code === 200) {",
+                  "            const data = res.json();",
+                  "            const token = data.data?.tokens?.accessToken || data.data?.accessToken;",
+                  "            if (token) {",
+                  "                pm.collectionVariables.set(\"adminToken\", token);",
+                  "                pm.environment.set(\"adminToken\", token);",
+                  "            }",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Admin analytics returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.consultations).to.be.an('object');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

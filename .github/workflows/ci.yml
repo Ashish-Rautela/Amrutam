@@ -55,10 +55,10 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Run Prisma DB Push / Migrations
+      - name: Run Prisma Migrations
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/amrutam_test_db?schema=public
-        run: npx prisma db push
+        run: npx prisma migrate deploy
 
       - name: Run Unit Tests
         run: npm run test:unit

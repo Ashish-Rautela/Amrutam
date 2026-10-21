@@ -158,6 +158,8 @@ model DoctorProfile {
   bio                String?            @db.Text
   verificationStatus VerificationStatus @default(PENDING) @map("verification_status")
   verifiedAt         DateTime?          @map("verified_at")
+  verifiedBy         String?            @map("verified_by")
+  rejectionReason    String?            @map("rejection_reason") @db.Text
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
 
@@ -165,6 +167,7 @@ model DoctorProfile {
   consultations      Consultation[]
   prescriptions      Prescription[]
 
+  @@index([verificationStatus])
   @@map("doctor_profiles")
 }
 

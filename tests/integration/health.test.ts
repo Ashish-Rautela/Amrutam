@@ -135,4 +135,21 @@ describe('Health and Application Foundation Integration Tests', () => {
       expect(response.body).toHaveProperty('correlationId');
     });
   });
+
+  describe('GET /metrics (Prometheus RED Metrics)', () => {
+    it('should return HTTP 200 with Prometheus metrics text format', async () => {
+      const response = await request(app).get('/metrics');
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/plain');
+      expect(response.text).toContain('amrutam_');
+    });
+
+    it('should also be accessible under API prefix (/api/v1/metrics)', async () => {
+      const response = await request(app).get('/api/v1/metrics');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toContain('amrutam_');
+    });
+  });
 });

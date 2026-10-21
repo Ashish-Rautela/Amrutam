@@ -265,6 +265,810 @@ paths:
           description: Profile details without sensitive hashes or secrets
         '401':
           description: Unauthorized
+  /doctors:
+    get:
+      summary: Public Doctor Directory Search
+      description: Search approved (VERIFIED) doctors with filtering, stable sorting, and bounded pagination.
+      parameters:
+        - name: specialization
+          in: query
+          schema:
+            type: string
+          description: Filter by clinical specialization (e.g. Ayurveda, Panchakarma)
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [VIDEO, AUDIO, CHAT]
+          description: Filter by supported consultation mode
+        - name: language
+          in: query
+          schema:
+            type: string
+          description: Filter by language spoken (e.g. English, Hindi)
+        - name: minFee
+          in: query
+          schema:
+            type: number
+            minimum: 0
+        - name: maxFee
+          in: query
+          schema:
+            type: number
+            minimum: 0
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [experienceYears, consultationFee, createdAt, fullName]
+            default: createdAt
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      responses:
+        '200':
+          description: Paginated array of approved doctors
+  /doctors/profile:
+    post:
+      summary: Submit Doctor Profile for Verification
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullName, licenseNumber, specializations, qualifications, experienceYears, consultationFee, supportedModes]
+              properties:
+                fullName:
+                  type: string
+                licenseNumber:
+                  type: string
+                specializations:
+                  type: array
+                  items:
+                    type: string
+                qualifications:
+                  type: array
+                  items:
+                    type: string
+                experienceYears:
+                  type: integer
+                  minimum: 0
+                consultationFee:
+                  type: number
+                  minimum: 0
+                supportedModes:
+                  type: array
+                  items:
+                    type: string
+                    enum: [VIDEO, AUDIO, CHAT]
+                languages:
+                  type: array
+                  items:
+                    type: string
+                bio:
+                  type: string
+      responses:
+        '201':
+          description: Doctor profile submitted in PENDING status
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '409':
+          description: Duplicate profile or license number
+  /doctors/profile/me:
+    get:
+      summary: Get Authenticated Doctor's Own Profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Doctor profile details
+        '401':
+          description: Unauthorized
+        '404':
+          description: Profile not found
+    patch:
+      summary: Update Permitted Doctor Profile Fields
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName:
+                  type: string
+                specializations:
+                  type: array
+                  items:
+                    type: string
+                qualifications:
+                  type: array
+                  items:
+                    type: string
+                experienceYears:
+                  type: integer
+                consultationFee:
+                  type: number
+                supportedModes:
+                  type: array
+                  items:
+                    type: string
+                    enum: [VIDEO, AUDIO, CHAT]
+                languages:
+                  type: array
+                  items:
+                    type: string
+                bio:
+                  type: string
+      responses:
+        '200':
+          description: Profile updated successfully
+        '401':
+          description: Unauthorized
+        '404':
+          description: Profile not found
+  /doctors/{id}:
+    get:
+      summary: Public Doctor Profile by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Approved doctor public profile details
+        '404':
+          description: Doctor not found or not verified
+  /admin/doctors/pending:
+    get:
+      summary: List Doctor Profiles Awaiting Verification
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of pending doctor applications
+        '403':
+          description: Forbidden (Admin role required)
+  /admin/doctors/{id}/approve:
+    post:
+      summary: Approve Doctor Profile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Doctor approved and role upgraded to DOCTOR
+        '403':
+          description: Forbidden or self-approval attempt
+        '404':
+          description: Profile not found
+  /admin/doctors/{id}/reject:
+    post:
+      summary: Reject Doctor Profile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+      responses:
+        '200':
+          description: Doctor profile rejected with documented reason
+        '400':
+          description: Missing or invalid reason
+        '403':
+          description: Forbidden or self-rejection attempt
+        '404':
+          description: Profile not found
+  /availability/slots:
+    post:
+      summary: Create Doctor Availability Slots
+      security:
+        - BearerAuth: []
+      description: Creates one or more availability slots. Rejects past slots, durations < 10m or > 4h, and overlapping slots (enforced by PostgreSQL GIST exclusion constraint).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                startTime:
+                  type: string
+                  format: date-time
+                endTime:
+                  type: string
+                  format: date-time
+                slots:
+                  type: array
+                  items:
+                    type: object
+                    required: [startTime, endTime]
+                    properties:
+                      startTime:
+                        type: string
+                        format: date-time
+                      endTime:
+                        type: string
+                        format: date-time
+      responses:
+        '201':
+          description: Availability slots successfully created
+        '400':
+          description: Validation error or invalid duration/overlap
+        '403':
+          description: Forbidden (Doctor role and verified status required)
+        '409':
+          description: Slot overlaps with an existing slot in doctor's schedule
+  /availability/my-slots:
+    get:
+      summary: List Doctor's Own Availability Slots
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [AVAILABLE, RESERVED, BOOKED, CANCELLED]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of doctor's own slots
+        '403':
+          description: Forbidden
+  /availability/slots/{id}:
+    patch:
+      summary: Update an Eligible Availability Slot
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                startTime:
+                  type: string
+                  format: date-time
+                endTime:
+                  type: string
+                  format: date-time
+                status:
+                  type: string
+                  enum: [AVAILABLE, CANCELLED]
+      responses:
+        '200':
+          description: Slot updated successfully
+        '400':
+          description: Invalid time or cancelled slot
+        '403':
+          description: Forbidden or ownership mismatch
+        '409':
+          description: Conflict (slot already booked or overlaps)
+    delete:
+      summary: Cancel an Unbooked Availability Slot
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Slot successfully cancelled
+        '403':
+          description: Forbidden or ownership mismatch
+        '409':
+          description: Cannot cancel a slot with an active consultation
+  /availability/doctors/{doctorId}:
+    get:
+      summary: Public Query of an Approved Doctor's Available Slots
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: startDate
+          in: query
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of available future slots
+        '404':
+          description: Doctor not found or not verified
+  /bookings:
+    post:
+      summary: Book an Appointment Slot
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slotId]
+              properties:
+                slotId:
+                  type: string
+                  format: uuid
+                mode:
+                  type: string
+                  enum: [VIDEO, AUDIO, CHAT]
+                  default: VIDEO
+      responses:
+        '201':
+          description: Booking created successfully (or cached replay of prior identical idempotent request)
+        '400':
+          description: Validation error, self-booking, or idempotency key reused with different request payload
+        '409':
+          description: Slot already booked, unavailable, or concurrent request with this idempotency key currently processing
+    get:
+      summary: List Bookings
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [BOOKED, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED, NO_SHOW]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of bookings
+  /bookings/{id}:
+    get:
+      summary: Get Booking Details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Booking details
+        '404':
+          description: Not found
+  /bookings/{id}/cancel:
+    post:
+      summary: Cancel a Booking
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cancellationReason]
+              properties:
+                cancellationReason:
+                  type: string
+      responses:
+        '200':
+          description: Booking cancelled successfully
+        '400':
+          description: Invalid transition
+  /consultations/{id}:
+    get:
+      summary: Get Consultation Clinical & Administrative Details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Consultation details
+  /consultations/{id}/consent:
+    post:
+      summary: Record Explicit Patient Telemedicine Consent
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [granted]
+              properties:
+                granted:
+                  type: boolean
+                  enum: [true]
+                consentType:
+                  type: string
+                  enum: [TELEMEDICINE_CONSULTATION, DATA_PROCESSING, PRESCRIPTION_DELIVERY]
+                  default: TELEMEDICINE_CONSULTATION
+                version:
+                  type: string
+                  default: TPG_2020_V1
+      responses:
+        '200':
+          description: Consent recorded
+  /consultations/{id}/start:
+    post:
+      summary: Start Teleconsultation Session
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Consultation started
+        '400':
+          description: Consent not recorded or invalid state
+  /consultations/{id}/complete:
+    post:
+      summary: Complete Consultation with Clinical Notes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clinicalNotes]
+              properties:
+                clinicalNotes:
+                  type: string
+      responses:
+        '200':
+          description: Consultation completed
+  /consultations/{id}/no-show:
+    post:
+      summary: Mark Consultation as No-Show
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Marked as no-show
+  /consultations/{id}/prescriptions:
+    post:
+      summary: Issue Versioned Digital Prescription
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [diagnosis, items]
+              properties:
+                diagnosis:
+                  type: string
+                advice:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [medicineName, dosage, frequency, durationDays]
+                    properties:
+                      medicineName:
+                        type: string
+                      dosage:
+                        type: string
+                      frequency:
+                        type: string
+                      durationDays:
+                        type: integer
+                      instructions:
+                        type: string
+                parentPrescriptionId:
+                  type: string
+                  format: uuid
+                amendmentReason:
+                  type: string
+      responses:
+        '201':
+          description: Prescription issued successfully
+    get:
+      summary: Get Prescriptions for Consultation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of prescription revisions
+  /prescriptions/{id}:
+    get:
+      summary: Get Prescription Details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Prescription details with items
+  /payments/create-order:
+    post:
+      summary: Create Trusted Server-Priced Payment Order
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consultationId]
+              properties:
+                consultationId:
+                  type: string
+                  format: uuid
+                provider:
+                  type: string
+                  enum: [MOCK, RAZORPAY, STRIPE]
+      responses:
+        '201':
+          description: Payment order created successfully (or cached replay of prior identical idempotent request)
+        '400':
+          description: Consultation already completed, or idempotency key reused with different request payload
+        '409':
+          description: Concurrent request with this idempotency key currently processing
+  /payments/webhook:
+    post:
+      summary: Payment Gateway Webhook Receiver
+      description: Cryptographically authenticated and deduplicated webhook processing.
+      parameters:
+        - name: x-razorpay-signature
+          in: header
+          schema:
+            type: string
+        - name: x-payment-provider
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook received and processed
+        '401':
+          description: Invalid signature
+  /payments/mock-capture:
+    post:
+      summary: Simulated Payment Capture
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId]
+              properties:
+                orderId:
+                  type: string
+                paymentId:
+                  type: string
+      responses:
+        '200':
+          description: Payment captured
+  /payments/consultation/{consultationId}:
+    get:
+      summary: Get Payment Status for Consultation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment details
+  /admin/analytics/overview:
+    get:
+      summary: Platform Operational Analytics Overview
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Aggregated analytics
+  /admin/audit-logs:
+    get:
+      summary: System Audit Logs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: actorId
+          in: query
+          schema:
+            type: string
+        - name: resourceType
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated audit logs
 components:
   securitySchemes:
     BearerAuth:

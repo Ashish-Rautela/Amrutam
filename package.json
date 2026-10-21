@@ -12,12 +12,13 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "test": "vitest run",
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "vitest run --fileParallelism=false",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration",
-    "test:concurrency": "vitest run tests/concurrency",
-    "test:security": "vitest run tests/security",
-    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run tests/integration --fileParallelism=false",
+    "test:concurrency": "vitest run tests/concurrency --fileParallelism=false",
+    "test:security": "vitest run tests/security --fileParallelism=false",
+    "test:coverage": "vitest run --coverage --fileParallelism=false",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -58,6 +59,9 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "private": true
 }
